@@ -1,0 +1,297 @@
+#include "main.hpp"
+#include "UartLink.hpp"
+#include "Encoder.hpp"
+#include "BNO055_UART.hpp"
+#include "message.hpp"
+#include "RoboMasterController.hpp"
+#include "DCMotor.hpp"
+#include "ElectromagneticValve.hpp"
+#include "ServoMotor.hpp"
+#include "LED.hpp"
+
+int angle = 0;
+
+// ---- uart ----
+extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart3;
+
+// ---- can ----
+//extern CAN_HandleTypeDef hcan1;
+
+// ---- timer ----
+extern TIM_HandleTypeDef htim1; // for encoder
+extern TIM_HandleTypeDef htim2; // for pwm
+extern TIM_HandleTypeDef htim3; // for encoder
+extern TIM_HandleTypeDef htim4; // for encoder
+extern TIM_HandleTypeDef htim5; // 割り込み(20Hz)
+extern TIM_HandleTypeDef htim6; // 割り込み(100Hz)
+extern TIM_HandleTypeDef htim7; // 割り込み(1000Hz)
+extern TIM_HandleTypeDef htim8; // for encoder
+
+
+// ---- 対ROS通信 ----
+UartLink uart_link(&huart2, 0);
+Publisher<UartLink, float, float, float, float, float> periodic_pub(uart_link, messages::transmission::PERIODIC);
+// //データの送信, publisherの設定
+//UartLinkPublisher<float> pub(uart_link, 1);
+//データの受信, subscriberの設定
+UartLinkSubscriber<bool> sub_kokuban(uart_link, 1);
+UartLinkSubscriber<bool> sub_ball(uart_link, 2);
+
+// ---- IMU ----
+BNO055_UART imu(&huart3, EUL_AXIS::EUL_X);
+
+// ---- LED ----
+LED led1(GPIOA, GPIO_PIN_5); //PA_5
+
+//----ServoMotor----
+//NHK2025基盤
+ServoMotor servoMotor1(&htim2, TIM_CHANNEL_1, GPIOB, GPIO_PIN_15); //PA_0(TIM2_CH1/pwm_3),PB_15(dir_3)
+// //SpringRObocon2025基盤
+// ServoMotor servoMotor1(&htim2, TIM_CHANNEL_1, GPIO, GPIO_PIN_); //PA_6(TIM2_CH1/pwm),PB_15(dir?)
+// //----ServoMotor(LED付き)----
+// ServoMotor servoMotor1(&htim2, TIM_CHANNEL_1, GPIOB, GPIO_PIN_15, &led1); //PA_0(TIM2_CH1),PB_15(dir_3),PA_5
+
+//----ElecttomagneticValve----
+//NHK2025基盤
+ElectromagneticValve electromagneticValve1(GPIOB, GPIO_PIN_12); //J15(PB_12)
+// //SpringRObocon2025基盤
+// ElectromagneticValve electromagneticValve1(GPIOA, GPIO_PIN_11); //J7(PA_11)
+// //----ElecttomagneticValve(LED付き)----
+// ElectromagneticValve electromagneticValve1(GPIOB, GPIO_PIN_12, &led1); //J15(PB_12),PA_5
+
+// ---- encoder ----
+Encoder encoder1(&htim1, 4096); 
+Encoder encoder2(&htim4, 4096);
+Encoder encoder3(&htim8, 4096); 
+Encoder encoder4(&htim3, 4096); 
+
+// // ---- dc motor ---- (未動確)
+// DCMotor motor1(&htim2, TIM_CHANNEL_4, GPIOB, GPIO_PIN_1); // PB2(TIM2_CH4/pwm_1), PB1(dir_1)
+// DCMotor motor2(&htim2, TIM_CHANNEL_3, GPIOB, GPIO_PIN_14); // PB10(TIM2_CH3/pwm_2), PB14(dir_2)
+// DCMotor motor3(&htim2, TIM_CHANNEL_1, GPIOB, GPIO_PIN_15); // PA0(TIM2_CH1/pwm_3), PB15(dir_3)
+// DCMotor motor4(&htim2, TIM_CHANNEL_2, GPIOB, GPIO_PIN_0); // PA1(TIM2_CH2/pwm_4), PB0(dir_4)
+
+// // ---- RoboMaster ---- (未動確)
+// RoboMasterController robo_master(&hcan1);
+
+// ---- flag ----
+bool htim5_flag = false; // 20Hzでtrueになる
+
+// UART受信割り込み
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+        uart_link.interrupt(); // ros2との通信で受信したデータを処理
+    } else if (huart->Instance == USART3) {
+        //imu.interrupt();
+    }
+}
+
+// // GPIO割り込み
+// void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    
+// }
+
+// タイマー割り込み
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM5) {
+        // 20Hz
+        htim5_flag = true;
+    } else if (htim->Instance == TIM6) {
+        // 100Hz
+        imu.request_flag = true;
+        //robo_master.timer_flag = true;
+        // periodic_pub.publish(encoder1.getDegrees(), encoder2.getDegrees(), encoder3.getDegrees(), encoder4.getDegrees(), imu.get_degrees());
+        //periodic_pub.publish(robo_master.receive_data[0].pos_radian_estimated, robo_master.receive_data[0].vel_rps, robo_master.receive_data[0].current, robo_master.receive_data[0].temperature, imu.get_degrees());
+    } else if (htim->Instance == TIM7) {
+        // 1000Hz
+        encoder1.getRawCount();
+        encoder2.getRawCount();
+        encoder3.getRawCount();
+        encoder4.getRawCount();
+    }
+}
+
+// // CAN受信割り込み
+// void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan_ptr)
+// {
+//     if(hcan_ptr->Instance == hcan1.Instance){
+//         CAN_RxHeaderTypeDef RxHeader;
+//         uint8_t RxData[8];
+//         if (HAL_CAN_GetRxMessage(hcan_ptr, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
+//         {
+//             robo_master.onReceive(RxHeader.StdId, RxData, RxHeader.DLC);
+//         }
+//     }
+// }
+
+// サブスクライバのコールバック関数
+void servoCallback_kokuban(bool servo_state) {
+    // ここにコールバック関数の処理を書く
+    if (servo_state == true)
+    {
+        //(黒板)
+        // 電磁弁を開く
+        electromagneticValve1.open();
+        // 下げる
+        // 30度から120度まで3度ずつ増やす
+        for (int angle = 30; angle <= 120; angle += 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(15);
+        }
+        HAL_Delay(300);
+        //ものをつかむ
+        electromagneticValve1.close();
+        HAL_Delay(500);
+        //　上げる
+        // 120度から0度まで3度ずつ減らす
+        for(int angle = 120; angle >= 0; angle -= 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(15);
+        }
+        HAL_Delay(1000);
+        // ものを落とす
+        electromagneticValve1.open();
+        HAL_Delay(300);
+        //　もとの位置に戻る
+        // 0度から30度まで3度ずつ増やす
+        for(int angle = 0; angle <= 30; angle += 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(10);
+        }
+    }
+}
+
+void servoCallback_ball(bool servo_state) {
+    // ここにコールバック関数の処理を書く
+    if (servo_state == true)
+    {
+        //(ボール)
+        // 電磁弁を開く
+        electromagneticValve1.open();
+        // 下げる
+        // 30度から90度まで3度ずつ増やす
+        for (int angle = 30; angle <= 90; angle += 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(15);
+        }
+        HAL_Delay(300);
+        // ものをつかむ
+        electromagneticValve1.close();
+        HAL_Delay(500);
+        //　上げる
+        // 90度から0度まで3度ずつ減らす
+        for(int angle = 90; angle >= 0; angle -= 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(15);
+        }
+        HAL_Delay(400);
+        // ものを落とす
+        electromagneticValve1.open();
+        HAL_Delay(500);
+        //　もとの位置に戻る
+        // 0度から90度まで3度ずつ増やす
+        for(int angle = 0; angle <= 30; angle += 3){
+            servoMotor1.SetAngle(angle);
+            HAL_Delay(10);
+        }
+    }
+}
+
+void ledCallback(bool LED_state) {
+    // ここにコールバック関数の処理を書く
+    if (LED_state == true)
+    {
+        led1.on();
+    }
+    else
+    {
+        led1.off();
+    }
+}
+
+//初期化処理を以下に書く
+void setup() {
+    uart_link.start(); // ros2との通信を開始
+    imu.start(); // IMUを開始
+    // timer
+    HAL_TIM_Base_Start_IT(&htim5); // 20Hz
+    HAL_TIM_Base_Start_IT(&htim6); // 100Hz
+    HAL_TIM_Base_Start_IT(&htim7); // 1000Hz
+    // // encoder
+    // encoder1.start();
+    // encoder2.start();
+    // encoder3.start();
+    // encoder4.start();
+//     // robo_master
+//     robo_master.start();
+//     robo_master.setControlMode(0, RoboMasterValues::ControlMode::Position);
+//     robo_master.setTargetPosition(0, robo_master.receive_data[0].pos_radian_estimated - 1500);
+    // 電磁弁を開く
+    electromagneticValve1.open();
+
+    // サーボモータ
+    servoMotor1.start();
+    //servoMotor1.SetAngle(60);
+
+    // サブスクライバのコールバック関数を設定
+    sub_kokuban.set_callback(servoCallback_kokuban);
+    sub_ball.set_callback(servoCallback_ball);
+    sub_LED.set_callback(ledCallback);
+
+    // LED
+    led1.off();
+}
+
+void loop() 
+{
+    // if(servo_msg = true)
+    // {
+    //     sub.set_callback(callback); // コールバック関数の設定
+    // }
+    // else if (false)
+    // {
+    //     sub.set_callback(callback2); // コールバック関数の設定
+    // }
+    
+    
+    //pub.publish(3.14f);
+
+    // //LEDを点灯
+    // led1.on();
+    // HAL_Delay(500);
+    // //LEDを消灯
+    // led1.off();
+    // HAL_Delay(500);
+
+    // if(imu.request_flag){
+    //     imu.request_euler();
+    //     imu.request_flag = false;
+    // }
+    // if(robo_master.timer_flag){
+    //     robo_master.timer_callback();
+    //     robo_master.timer_flag = false;
+    // }
+
+    // static int counter = 0; // 10秒カウンタ
+    // static bool valbe_state = false; // 電磁弁の状態
+    // if(htim5_flag){
+    //     // 20Hz
+    //     htim5_flag = false;
+    //     counter++; // カウンタをインクリメント
+    // }
+
+    if (counter >=50) // 2.5秒
+    {
+        counter = 0; // カウンタリセット
+        valbe_state = !valbe_state; // 電磁弁の状態を反転
+        //電磁弁の状態によって開閉
+        if(valbe_state){ // 開く
+            electromagneticValve1.open(); // 電磁弁を開く
+        }else{// 閉じる
+            electromagneticValve1.close(); // 電磁弁を閉じる
+        }    
+    //robo_master.setTargetCurrent(0, 400);
+    //robo_master.setTargetSpeed(0, -100);
+    }
+}
