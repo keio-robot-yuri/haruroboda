@@ -9,8 +9,10 @@
 #include "ServoMotor.hpp"
 #include "LED.hpp"
 #include "WS2815B.hpp"
+#include "math.h"
 
 int angle = 0;
+
 
 // ---- uart ----
 extern UART_HandleTypeDef huart2;
@@ -38,8 +40,8 @@ Publisher<UartLink, float, float, float, float, float> periodic_pub(uart_link, m
 //データの受信, subscriberの設定
 UartLinkSubscriber<bool> sub_kokuban(uart_link, 1);
 UartLinkSubscriber<bool> sub_ball(uart_link, 2);
-UartLinkSubscriber<bool> sub_TapeLED1(uart_link, 3);
-UartLinkSubscriber<bool> sub_TapeLED2(uart_link, 4);
+UartLinkSubscriber<bool> sub_TapeLED1(uart_link, 4);
+UartLinkSubscriber<bool> sub_TapeLED2(uart_link, 3);
 
 // ---- IMU ----
 BNO055_UART imu(&huart3, EUL_AXIS::EUL_X);
@@ -62,7 +64,7 @@ ElectromagneticValve electromagneticValve1(GPIOC, GPIO_PIN_4); //J16(PC_4)(sole/
 // ElectromagneticValve electromagneticValve1(GPIOB, GPIO_PIN_12, &led1); //J15(PB_12),PA_5
 
 // ---- LED_Tape ---- 
-WS2815B led_tape(&htim3, TIM_CHANNEL_2); //J8(PB_5)
+WS2815B led_tape(&htim3, TIM_CHANNEL_2); //J8(PB_5)-PWMがでている
 
 // ---- flag ----
 bool htim5_flag = false; // 20Hzでtrueになる
@@ -109,7 +111,7 @@ void servoCallback_kokuban(bool servo_state) {
         electromagneticValve1.open();
         // 下げる
         // 30度から120度まで3度ずつ増やす
-        for (int angle = 30; angle <= 120; angle += 3){
+        for (int angle = 90; angle <= 219; angle += 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(15);
         }
@@ -119,7 +121,7 @@ void servoCallback_kokuban(bool servo_state) {
         HAL_Delay(500);
         //　上げる
         // 120度から0度まで3度ずつ減らす
-        for(int angle = 120; angle >= 0; angle -= 3){
+        for(int angle = 219; angle >= 63; angle -= 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(15);
         }
@@ -129,9 +131,33 @@ void servoCallback_kokuban(bool servo_state) {
         HAL_Delay(300);
         //　もとの位置に戻る
         // 0度から30度まで3度ずつ増やす
-        for(int angle = 0; angle <= 30; angle += 3){
+        for(int angle = 63; angle <= 90; angle += 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(10);
+        }
+        // for (int a=20;a>=13;a--){
+        //     for(int l = 0; l <= 20; l++){
+        //         led_tape.set_rgb(l,80-l*5-a*2,l*5+a*2,0);
+        //         HAL_Delay(6*a);
+        //         led_tape.clear();
+        //     }
+        //     HAL_Delay(1);
+        // }
+        // for (int b=20;b>=10;b--){
+        //     for(int m= 0; m <= 20; m++){
+        //         led_tape.set_rgb(m,m*5+b*2,0,80-m*5-b*2);
+        //         HAL_Delay(4*b);
+        //         led_tape.clear();
+        //     }
+        //     HAL_Delay(1);
+        // }
+        for (int c=5;c>=1;c--){ //C=20　->　5にした
+            for(int n = 0; n <= 20; n++){
+                led_tape.set_rgb(n,0,80-n*5-c*2,n*5+c*2);
+                HAL_Delay(2*c);
+                led_tape.clear();
+            }
+            HAL_Delay(1);
         }
     }
 }
@@ -145,7 +171,7 @@ void servoCallback_ball(bool servo_state) {
         electromagneticValve1.open();
         // 下げる
         // 30度から90度まで3度ずつ増やす
-        for (int angle = 30; angle <= 90; angle += 3){
+        for (int angle = 90; angle <= 195; angle += 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(15);
         }
@@ -155,7 +181,7 @@ void servoCallback_ball(bool servo_state) {
         HAL_Delay(500);
         //　上げる
         // 90度から0度まで3度ずつ減らす
-        for(int angle = 90; angle >= 0; angle -= 3){
+        for(int angle = 195; angle >= 66; angle -= 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(15);
         }
@@ -165,40 +191,45 @@ void servoCallback_ball(bool servo_state) {
         HAL_Delay(500);
         //　もとの位置に戻る
         // 0度から90度まで3度ずつ増やす
-        for(int angle = 0; angle <= 30; angle += 3){
+        for(int angle = 66; angle <= 90; angle += 3){
             servoMotor1.SetAngle(angle);
             HAL_Delay(10);
         }
     }
 }    
 
-void Hachimitsu_kyoen(bool Tape_LED1){
+void mode_switch(bool Tape_LED1){
     // ここにコールバック関数の処理を書く
     if (Tape_LED1 == 1)
     {
-        led_tape.set_rgb(0,20,0,0);
+        for (int d=0; d<=20; d++){
+            led_tape.set_rgb(d,60,60,60);
+            HAL_Delay(10);
+        }
         led_tape.show();
     }
-    else
-    {
-        led_tape.clear();
-        led_tape.show();
+    // else
+    // {
+    //     led_tape.clear();
+    //     for(int i = 0; i <= 20; i++){
+    //         led_tape.set_rgb(i,0,0,0);
+    //         HAL_Delay(1000);
+    //     }
+    //     led_tape.show();
+    // } 
+}
+
+void Hachimitsu_kyoen(bool Tape_LED2){
+    // ここにコールバック関数の処理を書く
+    if (Tape_LED2 == 1)
+    {   
+        while (1)
+        {
+            led_tape.smooth_color_transition();  // 色変化をループで実行
+        }
     }
 }
 
-void mode_switch(bool Tape_LED2){
-    // ここにコールバック関数の処理を書く
-    if (Tape_LED2 == 1)
-    {
-        led_tape.set_rgb(0,0,20,0);
-        led_tape.show();
-    }
-    else
-    {
-        led_tape.clear();
-        led_tape.show();
-    }
-}
 
 //初期化処理を以下に書く
 void setup() {
@@ -224,6 +255,4 @@ void setup() {
 }
 
 void loop() {
-}
-
-    
+} 

@@ -46,7 +46,7 @@ class ServoMotor{
         static constexpr int MIN_Pulse_Width_us = 500; //0.5ms = 500us
         static constexpr int MAX_Pulse_Width_us = 2500; //2.5ms = 2500us
         static constexpr int MIN_Angle = 0;
-        static constexpr int MAX_Angle = 120;
+        static constexpr int MAX_Angle = 270;
 
     public:
         ServoMotor(TIM_HandleTypeDef *htim, uint32_t channel);

@@ -8,7 +8,7 @@
 class WS2815B{
     private:
     #define RST 250
-    #define LED_NUM 20
+    #define LED_NUM 20 //LEDの数
     #define HIGH 10
     #define LOW 5
     uint8_t TIM_CHANNEL_X;
@@ -24,4 +24,6 @@ class WS2815B{
         void init();
         void execute();
         void clear();
+        void hsv_to_rgb(float h, float s, float v, int *r, int *g, int *b);
+        void smooth_color_transition();        
 };
